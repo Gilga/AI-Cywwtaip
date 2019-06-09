@@ -26,10 +26,19 @@ Study Project 2 (Real Time Strategy Game): AI Game Client written in Julia
 ## Documentation
 not yet
 
+## Problems
+Currently this Project only works with Julia 1.0 because package **JavaCall** is not updated for Julia 1.1 yet.
+
 ## Requirements
-* Julia 1.1 or higher [download here](https://julialang.org/)
+* Julia 1.0 [download here](https://julialang.org/)
 * Julia Packages See [REQUIRE](REQUIRE)
 * [cywwtaip.zip](cywwtaip.zip.md)
+
+## Installation (Only for Windows)
+* Please run batch **install_packages.bat**. Every package should be installed automatically.
+* The batch **show_packages.bat** gives you info of currently installed packages
+
+## Tested Systems
 
 ### Windows
 * Operating System: Windows 10 Home 64-bit (10.0, Build 17134 or newer)
