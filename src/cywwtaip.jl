@@ -19,7 +19,8 @@ end
 function destroy()
   println("--------------------------------------------------------------------------------")
   @info "Destroy JavaCall"
-  JavaCall.destroy() # note: JavaCall cannot be initalized again in same process
+  #JavaCall.destroy()
+  @warn "Disabled because of this problem: If destroyed, JavaCall cannot be initalized again in same process!"
   println("--------------------------------------------------------------------------------")
 end
 
@@ -40,11 +41,11 @@ mutable struct GraphNode
   x::Float32
   y::Float32
   z::Float32
-  
+
   neighbors::Array{JGraphNode, 1}
   blocked::Bool
   owner::Int32
-  
+
   function GraphNode(node::JGraphNode)
     this = new(node)
     this.x = jfield(node, "x", jfloat)

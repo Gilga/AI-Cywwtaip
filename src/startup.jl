@@ -128,7 +128,7 @@ end
       waitForRestart()
       if AI_THREADS == 1 || myid() == proc_reloader()
         println("Reload Script...")
-        @async revise()
+        revise()
         if AI_THREADS > 1
           waitForRevise()
           resetCounter()
