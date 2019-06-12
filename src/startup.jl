@@ -57,6 +57,7 @@ function revise()
     Revise.revise()
   catch ex
     exception=ex
+    open("../revise_errors.log","w+") do f Base.showerror(f, ex, catch_backtrace()) end
   end
   if AI_THREADS > 1 put!(ReviseChannel, exception) end
 end

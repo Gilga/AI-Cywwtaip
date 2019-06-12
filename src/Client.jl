@@ -30,6 +30,33 @@ outputBacktrace(ex) = open(getErrorLogFile(),"w+") do f Base.showerror(f, ex, ca
 
 ####################################################################################################
 
+function updateWorld(client::NetworkClient)
+  println("START!")
+  #while isAlive(client)
+    print("#[")
+    graphs = world
+    #=
+    graphs = getGraph(client)
+    if length(graphs) > 0
+      i=0
+      for graph in graphs
+        i += 1; j=0;
+        for n in graph.neighbors
+          j += 1
+          node = GraphNode(n)
+          if node.owner > 2 println("[$i,$j]: "*toInfoString(node)) end
+          if node.owner < 0 println("###### [$i,$j]: "*toInfoString(node)) end
+        end
+        break
+      end
+      println("world updated.")
+    end
+    =#
+    print("]# ")
+  #end
+  println("END!")
+end
+
 function main(args::Array{String,1} ;output=Base.println)
   println("--------------------------------------------------------------------------------")
   @info "Start Game..."
@@ -46,8 +73,8 @@ function main(args::Array{String,1} ;output=Base.println)
   global pid = length(args[1])>0 ? parse(Int,args[1]) : 0
   global server = len>1 ? args[2] : "localhost"
   global name = len>2 ? args[3] : string("Client",pid)
-  global winMsg = len>3 ? args[4] : "SUPER!"
-  global client
+  global winMsg = len>3 ? args[4] : "GEWONNEN!"
+  global client = nothing
 
   try
     cywwtaip.init()
@@ -55,70 +82,71 @@ function main(args::Array{String,1} ;output=Base.println)
 
     # Problem: if connection gets stuck somehow the program has to be restarted...
     # There is currently no function to interrupt a task in julia...
+    #t = @async begin client = NetworkClient(server, name, winMsg) end
+    #Base.throwto(t, InterruptException())
+    #for i=1:9999 if client != nothing break end end
+    #if client == nothing return end
+
     client = NetworkClient(server, name, winMsg)
+
     global playerNumber = getMyPlayerNumber(client)
 
-    start = false
+    timeLimitBroke = false
     prev_position = nothing
     startTime = time()
     tickTime = 0
     timeLimit = 60 # 60s
     timeLimitBeforeStart = 10 # 60s
 
-    @info "Loop..."
+    cywwtaip.reset()
+    @time world = getGraph(client) # takes a loooong time
+
+    @info "Wait for start..."
     while isAlive(client)
       currentTime = (time() - startTime)
 
-      if !start
-        position = [
-        getBotPosition(client, playerNumber, 0),
-        getBotPosition(client, playerNumber, 1),
-        getBotPosition(client, playerNumber, 2)]
-        if prev_position != nothing && prev_position != position start=true end
-        prev_position = position
-
-        if currentTime > timeLimitBeforeStart break end # auto close
-
-        if (time() - tickTime) > 1
-          println("Remaining Time($timeLimitBeforeStart): $(timeLimitBeforeStart - round(currentTime))")
-          tickTime=time()
-        end
-
-        if !start continue end
-
-        println("\n[START]\n------------------------------")
-        tickTime=0
-        startTime = time()-1
-        currentTime = (time() - startTime)
-      end
+      position = getBotPosition(client, playerNumber)
+      if prev_position != nothing && prev_position != position break end
+      prev_position = position
 
       if (time() - tickTime) > 1
-        println("Remaining Time($timeLimit): $(timeLimit - round(currentTime))")
+        println("Remaining Time($timeLimitBeforeStart): $(timeLimitBeforeStart - round(currentTime))")
         tickTime=time()
       end
 
-      if currentTime > timeLimit break end #after Xs break this loop
+      if currentTime > timeLimitBeforeStart timeLimitBroke=true; break end # auto close
+    end
 
-      speed = [getBotSpeed(client, 0),getBotSpeed(client, 1),getBotSpeed(client, 2)]
-      score = getScore(client, playerNumber)
-      position = getBotPosition(client, 0, 0)
-      direction = getBotDirection(client, 0)
+    tickTime=0
+    startTime = time()-1
 
-      changeMoveDirection(client, 1, -0.08f0)
+    if !timeLimitBroke
+      @info "Main Loop..."
+      println("\n[START]\n------------------------------")
 
-      #println("Speed: $speed")
-      #println("Score: $score")
-      #println("Position: $position")
-      #println("Direction: $direction")
+      while isAlive(client)
+        currentTime = (time() - startTime)
 
-      #=
-      graph = getGraph(client)[1]
-      for node in graph.neighbors
-        println(typeof(node))
-        n = GraphNode(node)
-        println(toString(n) * ": " * string(n.owner) * ", " * string(n.blocked))
+        if (time() - tickTime) > 1
+          println("Remaining Time($timeLimit): $(timeLimit - round(currentTime))")
+          tickTime=time()
+        end
+
+        if currentTime > timeLimit timeLimitBroke=true; break end #after Xs break this loop
+        #print(".")
+
+        #speed = getBotSpeed(client)
+        #score = getScore(client, playerNumber)
+        #position = getBotPosition(client, 0, 0)
+        #direction = getBotDirection(client, 0)
+
+        #println("Speed: $speed")
+        #println("Score: $score")
+        #println("Position: $position")
+        #println("Direction: $direction")
+
+        #changeMoveDirection(client, 1, -0.08f0)
       end
-      =#
     end
 
   catch ex
@@ -127,7 +155,7 @@ function main(args::Array{String,1} ;output=Base.println)
   end
 
   print("Game ended.")
-  cywwtaip.destroy() # cleanup cywwtaip
+  #cywwtaip.destroy() # cleanup cywwtaip
 end
 
 end # Client
