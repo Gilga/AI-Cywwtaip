@@ -89,7 +89,7 @@ export translate
 
 @info "JavaCall Hooks..."
 
-NetworkClient(hostname::String, teamName::String, winMsg::String) = NetworkClient(JNetworkClient((JString,JString,JString,), hostname, teamName, winMsg))
+NetworkClient(hostname::String, teamName::String, winMsg::String, timeout::Int=30) = NetworkClient(JNetworkClient((JString,JString,JString,jint), hostname, teamName, winMsg, timeout))
 
 isAlive(client::NetworkClient) = Bool(jcall(client.handle, "isAlive", jboolean, ()))
 getMyPlayerNumber(client::NetworkClient) = jcall(client.handle, "getMyPlayerNumber", jint, ())

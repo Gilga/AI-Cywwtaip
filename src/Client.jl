@@ -57,37 +57,46 @@ function updateWorld(client::NetworkClient)
   println("END!")
 end
 
-function main(args::Array{String,1} ;output=Base.println)
+world = GraphNode[]
+function ttt(client)
+  while isAlive(client)
+    sleep(3)
+    #global world = getGraph(client)
+    print("#")
+  end
+end
+
+function ready_or_not(channel, wid)
+  if !isready(channel)
+    println("Process $wid was not ready")
+    return nothing
+  else
+    return take!(channel)
+  end
+end
+
+function main(args::Array{String,1})
   println("--------------------------------------------------------------------------------")
   @info "Start Game..."
 
   global playerNumber, latency, initalized
 
-  len = length(args)
-  if len == 0 throw(RuntimeException("No PID set!")) end # no pid? -> leave
-
   initalized = false
 
-  #setOutput(output)
-
-  global pid = length(args[1])>0 ? parse(Int,args[1]) : 0
-  global server = len>1 ? args[2] : "localhost"
-  global name = len>2 ? args[3] : string("Client",pid)
-  global winMsg = len>3 ? args[4] : "GEWONNEN!"
+  len = length(args)
+  global server = len>1 ? args[1] : "localhost"
+  global name = len>2 ? args[2] : "MyTeam"
+  global winMsg = len>3 ? args[3] : "GEWONNEN!"
   global client = nothing
+  global world
+  serverTimeout = 10
 
   try
     cywwtaip.init()
-    @info "Connect..."
+    @info "Connect to Server '$server' (Timeout in $serverTimeout seconds)..."
+    client = NetworkClient(server, name, winMsg, serverTimeout)
 
-    # Problem: if connection gets stuck somehow the program has to be restarted...
-    # There is currently no function to interrupt a task in julia...
-    #t = @async begin client = NetworkClient(server, name, winMsg) end
-    #Base.throwto(t, InterruptException())
-    #for i=1:9999 if client != nothing break end end
-    #if client == nothing return end
-
-    client = NetworkClient(server, name, winMsg)
+    # a star algorithmn
 
     global playerNumber = getMyPlayerNumber(client)
 
@@ -97,28 +106,36 @@ function main(args::Array{String,1} ;output=Base.println)
     tickTime = 0
     timeLimit = 60 # 60s
     timeLimitBeforeStart = 10 # 60s
+    latency = 0
 
     cywwtaip.reset()
-    @time world = getGraph(client) # takes a loooong time
+    #@async ttt(client)
+    lstart=0
+    lend=0
 
     @info "Wait for start..."
     while isAlive(client)
       currentTime = (time() - startTime)
 
+      lstart = time()
       position = getBotPosition(client, playerNumber)
+      lend = time()
+
       if prev_position != nothing && prev_position != position break end
       prev_position = position
 
       if (time() - tickTime) > 1
-        println("Remaining Time($timeLimitBeforeStart): $(timeLimitBeforeStart - round(currentTime))")
+        println("Seconds: $(timeLimitBeforeStart - round(currentTime))")
         tickTime=time()
       end
 
       if currentTime > timeLimitBeforeStart timeLimitBroke=true; break end # auto close
     end
 
+    latency = lend-lstart
+    startTime = lstart-1
     tickTime=0
-    startTime = time()-1
+    world = getGraph(client)
 
     if !timeLimitBroke
       @info "Main Loop..."
@@ -128,7 +145,7 @@ function main(args::Array{String,1} ;output=Base.println)
         currentTime = (time() - startTime)
 
         if (time() - tickTime) > 1
-          println("Remaining Time($timeLimit): $(timeLimit - round(currentTime))")
+          println("Seconds: $(timeLimit - round(currentTime)), latency: $latency")
           tickTime=time()
         end
 

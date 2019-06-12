@@ -32,7 +32,8 @@ Currently this Project only works with Julia 1.0 because package **JavaCall** is
 ## Requirements
 * Julia 1.0 [download here](https://julialang.org/)
 * Julia Packages See [REQUIRE](REQUIRE)
-* [cywwtaip.zip](cywwtaip.zip.md)
+* **cywwtaip.zip** (is from Moodle class **GT1(PÜ) AI for Games and Interactive Systems (PÜ) - SoSe2019** at **HTW** (Hochschule für Technik und Wirtschaft) in **Berlin, Germany**
+I do not own this library, so please get permission and file from **Prof. Dr. Lenz, Tobias** first!)
 
 ## Installation (Only for Windows)
 * Please run batch **install_packages.bat**. Every package should be installed automatically.
