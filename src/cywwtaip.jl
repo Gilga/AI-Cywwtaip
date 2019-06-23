@@ -1,5 +1,8 @@
 module cywwtaip
 
+using Base.Threads
+using Distributed
+
 using JavaCall
 
 ####################################################################################################
@@ -41,82 +44,135 @@ mutable struct NetworkClient
 end
 export NetworkClient
 
+mutable struct Bot
+  id::Int32
+  player::Int32
+  position::Array{Float32, 1}
+  direction::Array{Float32, 1}
+  speed::Float32
+
+  Bot(id::Integer, player::Integer, position::Array{Float32, 1}, direction::Array{Float32, 1}, speed::Float32) = new(id, player, position, direction, speed)
+
+  function Bot(client::NetworkClient, id::Integer, player::Integer)
+    this = new(id, player)
+    this.position = getBotPosition(client, player, id)
+    this.direction = getBotDirection(client, id)
+    this.speed = getBotSpeed(client, id)
+    this
+  end
+end
+export Bot
+
 mutable struct GraphNode
+  id::UInt32
   handle::Union{Nothing, JGraphNode}
   position::Array{jfloat, 1}
-  neighbors::Array{JGraphNode, 1}
+  neighbors::Array{Union{Nothing, GraphNode, JGraphNode}, 1}
   blocked::Bool
   owner::Int32
 
-  GraphNode() = new(nothing, [], [], false, -1)
-
-  function GraphNode(handle::JGraphNode)
-    this = new(handle)
-    this.position = [jfield(handle, "x", jfloat), jfield(handle, "y", jfloat), jfield(handle, "z", jfloat)]
-    this.blocked = Bool(jfield(handle, "blocked", jboolean))
-    this.owner =  jfield(handle, "owner", jint)
-    this.neighbors = jfield(handle, "neighbors", Array{JGraphNode, 1})
+  function GraphNode(id=0; handle::Union{Nothing, JGraphNode}=nothing)
+    this = new(id, handle)
+    if handle != nothing parse(this, handle) end
     this
   end
 end
 export GraphNode
 
 # TEMPLATE ARRAY
-TEMPLATE_LIST = Array{GraphNode,1}(undef, 4096)
+TEMPLATE_LIST = Array{GraphNode,1}(undef, 40962)
+@threads for i=1:length(TEMPLATE_LIST) TEMPLATE_LIST[i] = GraphNode(i) end
+
+const DEFAULT_NODE_FUNCTION=(x)->x
+
+getWorldTemplate() = Array{Union{Nothing,GraphNode},1}(undef,length(TEMPLATE_LIST))
+export getWorldTemplate
 
 function reset()
-  global TEMPLATE_LIST
-  for i=1:length(TEMPLATE_LIST) TEMPLATE_LIST[i] = GraphNode() end
+  #global TEMPLATE_LIST
+  #@sync @distributed for i=1:length(TEMPLATE_LIST) TEMPLATE_LIST[i] = GraphNode() end
 end
 
-function translate(this::GraphNode, handle::JGraphNode)
-  this.position = [jfield(handle, "x", jfloat), jfield(handle, "y", jfloat), jfield(handle, "z", jfloat)]
+parse(this::JGraphNode) = GraphNode(0; handle=this)
+
+function parse(this::GraphNode, handle::JGraphNode)
+  this.handle = handle
+  this.position = getPosition(handle) #[jfield(handle, "x", jfloat), jfield(handle, "y", jfloat), jfield(handle, "z", jfloat)]
   this.blocked = Bool(jfield(handle, "blocked", jboolean))
-  this.owner = jfield(handle, "owner", jint)
+  this.owner = jfield(handle, "owner", jint)+1
   this.neighbors = jfield(handle, "neighbors", Array{JGraphNode, 1})
   this
 end
 
-translate(handle::JGraphNode) = GraphNode(handle)
-
-function translate(handles::Array{JGraphNode, 1})
-  nodes = deepcopy(TEMPLATE_LIST)
-  for (node,handle) in zip(nodes,handles) translate(node, handle) end
+function parse(handles::Array{JGraphNode, 1}, f::Function=DEFAULT_NODE_FUNCTION)
+  nodes = TEMPLATE_LIST #deepcopy(TEMPLATE_LIST)
+  @time @sync @distributed for i=1:length(handles) f(parse(nodes[i], handles[i])) end
   nodes
 end
 
-export translate
+export parse
 
 @info "JavaCall Hooks..."
 
 NetworkClient(hostname::String, teamName::String, winMsg::String, timeout::Int=30) = NetworkClient(JNetworkClient((JString,JString,JString,jint), hostname, teamName, winMsg, timeout))
 
-isAlive(client::NetworkClient) = Bool(jcall(client.handle, "isAlive", jboolean, ()))
-getMyPlayerNumber(client::NetworkClient) = jcall(client.handle, "getMyPlayerNumber", jint, ())
-getScore(client::NetworkClient, player::Integer) = jcall(client.handle, "getScore", jint, (jint,), Int32(player))
-getScore(client) = [getScore(client,0),getScore(client,1),getScore(client,2)]
+isAlive(this::NetworkClient) = Bool(jcall(this.handle, "isAlive", jboolean, ()))
+getMyPlayerNumber(this::NetworkClient) = jcall(this.handle, "getMyPlayerNumber", jint, ())+1
 
-getBotPosition(client::NetworkClient, player::Integer, bot::Integer) = jcall(client.handle, "getBotPosition", Array{jfloat, 1}, (jint,jint,), Int32(player), Int32(bot)) #array
-getBotDirection(client::NetworkClient, bot::Integer) = jcall(client.handle, "getBotDirection", Array{jfloat, 1}, (jint,), Int32(bot))
-getBotSpeed(client::NetworkClient, bot::Integer) = jcall(client.handle, "getBotSpeed", jfloat, (jint,), Int32(bot))
-getBotPosition(client, player) = [getBotPosition(client, player, 0),getBotPosition(client, player, 1),getBotPosition(client, player, 2)]
-getBotDirection(client, player) = [getBotDirection(client, player, 0),getBotDirection(client, player, 1),getBotDirection(client, player, 2)]
-getBotSpeed(client, player) = [getBotSpeed(client, player, 0),getBotSpeed(client, player, 1),getBotSpeed(client, player, 2)]
-changeMoveDirection(client::NetworkClient, bot::Integer, angle::AbstractFloat) = jcall(client.handle, "changeMoveDirection", Nothing, (jint,jfloat,), Int32(bot), Float32(angle))
+getScore(this::NetworkClient, player::Integer) = jcall(this.handle, "getScore", jint, (jint,), Int32(player-1))
+getScore(this) = [getScore(this,1),getScore(this,2),getScore(this,3)]
 
-function getGraph(client::NetworkClient)
-  handles = jcall(client.handle, "getGraph", Array{JGraphNode, 1}, ())
-  translate(handles)
+getBotPosition(this::NetworkClient, player::Integer, bot::Integer) = jcall(this.handle, "getBotPosition", Array{jfloat, 1}, (jint,jint,), Int32(player-1), Int32(bot-1)) #array
+getBotDirection(this::NetworkClient, bot::Integer) = jcall(this.handle, "getBotDirection", Array{jfloat, 1}, (jint,), Int32(bot-1))
+getBotSpeed(this::NetworkClient, bot::Integer) = jcall(this.handle, "getBotSpeed", jfloat, (jint,), Int32(bot-1))
+
+getBotPositions(this::NetworkClient, player::Integer) = [getBotPosition(this, player, 1),getBotPosition(this, player, 2),getBotPosition(this, player, 3)]
+getBotDirections(this::NetworkClient) = [getBotDirection(this, 1),getBotDirection(this, 2),getBotDirection(this, 3)]
+getBotSpeeds(this::NetworkClient) = [getBotSpeed(this, 1),getBotSpeed(this, 2),getBotSpeed(this, 3)]
+
+getBots(this::NetworkClient, player::Integer) = [Bot(this, 1, player),Bot(this, 2, player),Bot(this, 3, player)]
+getBots(this::NetworkClient) = [getBots(this, 1),getBots(this, 2),getBots(this, 3)]
+
+function updateBot(this::NetworkClient, bot::Bot)
+  bot.position = getBotPosition(this, bot.player, bot.id)
+  bot.direction = getBotDirection(this, bot.id)
+  bot.speed = getBotSpeed(this, bot.id)
 end
 
-hashCode(client::NetworkClient) = jcall(client.handle, "hashCode", jint, ())
-equals(client::NetworkClient, obj::JObject) = Bool(jcall(client.handle, "equals", jboolean, (JObject,), obj))
-toString(client::NetworkClient) = jcall(client.handle, "toString", JString, ())
+updateBots(this::NetworkClient, bots::Array{Bot,1}) = for bot in bots updateBot(this,bot) end
+updateBots(this::NetworkClient, playerbots::Array{Array{Bot,1},1}) = for bots in playerbots updateBots(this,bots) end
 
-hashCode(node::GraphNode) = jcall(node.handle, "hashCode", jint, ())
-equals(node::GraphNode, obj::JObject) = Bool(jcall(node.handle, "equals", jboolean, (JObject,), obj))
-toString(node::GraphNode) = jcall(node.handle, "toString", JString, ())
-toInfoString(node::GraphNode) = "GraphNode "*string(node.position) * ": owner=" * string(node.owner) * ", blocked=" * string(node.blocked)
+changeMoveDirection(this::NetworkClient, bot::Integer, angle::AbstractFloat) = jcall(this.handle, "changeMoveDirection", Nothing, (jint,jfloat,), Int32(bot-1), Float32(angle))
+
+function getGraph(this::NetworkClient)
+  handles = jcall(this.handle, "getGraph", Array{JGraphNode, 1}, ())
+  parse(handles)
+end
+
+function update(this::GraphNode, handle::JGraphNode)
+  #this.handle = handle # not used, can be ignored
+  #this.position # should not change (is static anyway)
+  this.blocked = Bool(jfield(handle, "blocked", jboolean)) # can change
+  this.owner = jfield(handle, "owner", jint)+1 # can change
+  #this.neighbors # should not change, we replaced it previously in createWorld()
+  this
+end
+
+function updateGraph(this::NetworkClient, nodes::Array{GraphNode,1})
+  handles = jcall(this.handle, "getGraph", Array{JGraphNode, 1}, ())
+  @threads for i=1:length(handles) update(nodes[i], handles[i]) end
+end
+
+hashCode(this::NetworkClient) = jcall(this.handle, "hashCode", jint, ())
+equals(this::NetworkClient, obj::JObject) = Bool(jcall(this.handle, "equals", jboolean, (JObject,), obj))
+toString(this::NetworkClient) = jcall(this.handle, "toString", JString, ())
+
+hashCode(this::GraphNode) = jcall(this.handle, "hashCode", jint, ())
+equals(this::GraphNode, obj::JObject) = Bool(jcall(this.handle, "equals", jboolean, (JObject,), obj))
+toString(this::GraphNode) = jcall(this.handle, "toString", JString, ())
+toInfoString(this::GraphNode) = "Node["*string(this.id)*"] owner="* string(this.owner)*", blocked="*string(this.blocked)*", pos=["*string(join(this.position,", "))*"]"
+
+getPosition(this::JGraphNode) = [jfield(this, "x", jfloat), jfield(this, "y", jfloat), jfield(this, "z", jfloat)]
 
 ####################################################################################################
 
@@ -131,8 +187,16 @@ export getScore
 export getBotPosition
 export getBotDirection
 export getBotSpeed
+export getBotPositions
+export getBotDirections
+export getBotSpeeds
+export getBots
 export changeMoveDirection
 export getGraph
+export updateGraph
+export updateBot
+export updateBots
+export getPosition
 
 ####################################################################################################
 
