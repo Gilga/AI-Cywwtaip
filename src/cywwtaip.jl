@@ -44,14 +44,17 @@ mutable struct NetworkClient
 end
 export NetworkClient
 
+const Position = Array{Float32, 1}
+const Direction = Array{Float32, 1}
+
 mutable struct Bot
   id::Int32
   player::Int32
-  position::Array{Float32, 1}
-  direction::Array{Float32, 1}
+  position::Position
+  direction::Direction
   speed::Float32
 
-  Bot(id::Integer, player::Integer, position::Array{Float32, 1}, direction::Array{Float32, 1}, speed::Float32) = new(id, player, position, direction, speed)
+  Bot(id::Integer, player::Integer, position::Position, direction::Direction, speed::Float32) = new(id, player, position, direction, speed)
 
   function Bot(client::NetworkClient, id::Integer, player::Integer)
     this = new(id, player)
@@ -67,12 +70,14 @@ mutable struct GraphNode
   id::UInt32
   handle::Union{Nothing, JGraphNode}
   position::Array{jfloat, 1}
+  parent::Union{Nothing, GraphNode}
   neighbors::Array{Union{Nothing, GraphNode, JGraphNode}, 1}
   blocked::Bool
   owner::Int32
 
-  function GraphNode(id=0; handle::Union{Nothing, JGraphNode}=nothing)
+  function GraphNode(id::Integer=0; handle::Union{Nothing, JGraphNode}=nothing)
     this = new(id, handle)
+    this.parent = nothing
     if handle != nothing parse(this, handle) end
     this
   end
@@ -104,7 +109,7 @@ function parse(this::GraphNode, handle::JGraphNode)
   this
 end
 
-function parse(handles::Array{JGraphNode, 1}, f::Function=DEFAULT_NODE_FUNCTION)
+function parse(handles::Array{JGraphNode, 1}; f::Function=DEFAULT_NODE_FUNCTION)
   nodes = TEMPLATE_LIST #deepcopy(TEMPLATE_LIST)
   @time @sync @distributed for i=1:length(handles) f(parse(nodes[i], handles[i])) end
   nodes
@@ -175,6 +180,9 @@ toInfoString(this::GraphNode) = "Node["*string(this.id)*"] owner="* string(this.
 getPosition(this::JGraphNode) = [jfield(this, "x", jfloat), jfield(this, "y", jfloat), jfield(this, "z", jfloat)]
 
 ####################################################################################################
+
+export Position
+export Direction
 
 export hashCode
 export equals
