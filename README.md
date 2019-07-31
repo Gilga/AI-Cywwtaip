@@ -55,5 +55,5 @@ I do not own this library, so please get permission and file from **Prof. Dr. Le
 ### Old variant
 [See animated SVG here](http://mariolink.de/github/AI-Cywwtaip/plot1.svg)
 
-## New varaint
+## New variant
 [See animated SVG here](http://mariolink.de/github/AI-Cywwtaip/plot2.svg)
