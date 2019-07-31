@@ -57,6 +57,9 @@ listOfWaypoints= Array{Array{GraphNode,1},1}()
 ENERGYTIME = 0
 ENERGYAREA = 0.94
 
+lastNodesMax = 100
+lastNodes = []
+
 ####################################################################################################
 
 function resetWorld()
@@ -77,6 +80,16 @@ function resetWorld()
   global listOfEnergyNodes = Array{GraphNode,1}()
   global listOfEnergyFields = Array{GraphNode,1}()
   global listOfWaypoints= [GraphNode[],GraphNode[],GraphNode[]]
+
+  list1 = Array{Union{Nothing,GraphNode},1}(undef,  lastNodesMax)
+  list2 = Array{Union{Nothing,GraphNode},1}(undef, lastNodesMax)
+  list3 = Array{Union{Nothing,GraphNode},1}(undef, lastNodesMax)
+
+  for i=1:lastNodesMax list1[i] = nothing end
+  for i=1:lastNodesMax list2[i] = nothing end
+  for i=1:lastNodesMax list3[i] = nothing end
+
+  global lastNodes = [[0, list1],[0, list2],[0, list3]]
 end
 
 toKey(list::AbstractArray) = Symbol(join(list, ','))
@@ -141,14 +154,26 @@ end
 
 function moveAI(client::NetworkClient, aibot::AIBot)
   target = aibot.target == nothing ? aibot.startnode : aibot.target # aibot.targetEnergyField
-  dist = distance(aibot.parent.position,target)
+  #dist = distance(aibot.parent.position,target)
   #if dist < 0.051 println("$(aibot.parent.id): $(dist)") end
   # 0.024, 0.016, 0.01
-  mul = ((1000 * aibot.parent.speed)/dist)
+  mul = 1 #((1000 * aibot.parent.speed)/dist)
   if mul < 1 mul=1 end
-  angle = localAngleToTarget(aibot.parent.position, target.position, aibot.parent.direction; mul=mul)
+
+  position = getBotPosition(client, playerNumber, aibot.parent.id)
+  direction = getBotDirection(client, aibot.parent.id)
+  angle = localAngleToTarget(position, target.position, direction; mul=mul)
   #println("$(aibot.parent.id): "*string(angle))
   #println("$(aibot.parent.id): $(aibot.parent.speed): $(aibot.movespeed)")
+  changeMoveDirection(client, aibot.parent.id, angle)
+end
+
+function moveAI(client::NetworkClient, aibot::AIBot, target::Position)
+  mul = 100
+  if mul < 1 mul=1 end
+  position = getBotPosition(client, playerNumber, aibot.parent.id)
+  direction = getBotDirection(client, aibot.parent.id)
+  angle = localAngleToTarget(position, target, direction; mul=mul)
   changeMoveDirection(client, aibot.parent.id, angle)
 end
 
@@ -168,7 +193,9 @@ function updateBots(client::NetworkClient)
     aibot.movespeed = min(norm(prevposition - aibot.parent.position),1)
     aibot.parent.position += aibot.parent.direction*latency # adjust to future position because we have latency
 
-    searchCurrentNode(aibot)
+    aibot.prevnode = nothing
+    aibot.node = best = searchCurrentNode(aibot)
+    if aibot.prevnode == nothing aibot.prevnode = best end
     #aibot.node=getNode(aibot.parent.position)
     if aibot.node == nothing @warn "bot $(aibot.parent.id): no start node found!" end
     if aibot.startnode == nothing aibot.startnode = aibot.node end
@@ -205,6 +232,7 @@ function createWorld(client::NetworkClient)
     node.position
     worldlist[toKey(node.position)] = i
     (x,y,z) = node.position
+    #println("owner($i):"*string(node.owner))
 
     # energy fields with abs max x,y or z
     if bX.position[1] < x bX=node end
@@ -250,6 +278,17 @@ end
 
 ####################################################################################################
 
+function searchCurrentNode(aibot::AIBot, position::Position)
+  (old,best,bestdist) = (nothing,aibot.node, distance(aibot.node,position))
+
+  for node in world
+    dist = distance(node,position)
+    if dist < bestdist; (old,best,bestdist) = (best,node,dist); end
+  end
+
+  best
+end
+
 function searchCurrentNode(aibot::AIBot)
   (old,best,bestdist) = (nothing,aibot.node, distance(aibot.node,aibot.parent.position))
 
@@ -258,16 +297,40 @@ function searchCurrentNode(aibot::AIBot)
     if dist < bestdist; (old,best,bestdist) = (best,node,dist); end
   end
 
-  aibot.node = best
-  if aibot.prevnode == nothing aibot.prevnode = best end
+  best
 end
 
-function reconstruct_path!(cameFrom::AbstractDict, current::GraphNode)
+function reconstruct_path_old!(cameFrom::AbstractDict, current::GraphNode)
   total_path = []
   for (_,node) in cameFrom
     push!(total_path,node)
   end
   push!(total_path,current)
+  total_path
+end
+
+function reconstruct_path!(cameFrom::AbstractDict, current::GraphNode)
+  total_path = [current]
+  ks = keys(cameFrom)
+  key = last(collect(ks))
+  id = cameFrom[key]
+  node = getNode(id)
+  prepend!(total_path,[node])
+
+  for i=1:length(cameFrom)
+    if !haskey(cameFrom, id)
+      @warn "Node not found in path?"
+      break
+    end
+
+    old=id
+    id = cameFrom[id]
+    node = getNode(id)
+    prepend!(total_path,[node])
+
+    if old == id break end # found start
+  end
+
   total_path
 end
 
@@ -308,64 +371,125 @@ end
 # filter not owned fields and non blocked fields
 filterFreeFields() = filter((x)->!x.owner.blocked && x.owner!=playerNumber,world)
 
+#getNode(first(filter(x->in(x[2],openSet),collect(fScore)))[2])
+function getNodeByLowestScore_old(openSet, fScore) #the node in openSet having the lowest fScore[] value
+  for (_,node_id) in fScore
+    if in(node_id,openSet) return getNode(node_id) end
+  end
+  @warn "No fScore node in openSet!"
+  nothing #length(openSet)>0 ? getNode(first(openSet)) : nothing
+end
+
+function getLowestScore(openSet, fScore) #the node in openSet having the lowest fScore[] value
+  for t in fScore
+   if !in(t[2],openSet) continue end
+   return t
+  end
+  #@warn "No fScore node in openSet!"
+  nothing
+end
+
+#getNode(world, first(filter(x->in(x[2],openSet),collect(fScore)))[2])
+function getNodeByLowestScore(openSet, fScore) #the node in openSet having the lowest fScore[] value
+  t = getLowestScore(openSet, fScore)
+  if t !=nothing return getNode(t[2]) end
+  nothing #length(openSet)>0 ? getNode(world, first(openSet)) : nothing
+end
+
 function aStarSearch(start::GraphNode, goal::GraphNode)
   # The set of nodes already evaluated
-  closedSet = GraphNode[]
+  closedSet = Int32[]
+  id=start.id
 
   # The set of currently discovered nodes that are not evaluated yet.
   # Initially, only the start node is known.
-  openSet = GraphNode[start]
+  openSet = Int32[id]
 
   # For each node, which node it can most efficiently be reached from.
   # If a node can be reached from many nodes, cameFrom will eventually contain the
   # most efficient previous step.
-  cameFrom = OrderedDict{Int32,GraphNode}() # an empty map
-  #cameFrom[start.id] = nothing
+  cameFrom = OrderedDict{Int32,Int32}() # an empty map
+  cameFrom[id] = id
 
   # For each node, the cost of getting from the start node to that node.
   gScore = SortedSet{Tuple{Float32,Int32}}() # map with default value of Infinity
 
   # The cost of going from start to start is zero.
-  setValue!(gScore, start.id, 0)
+  setValue!(gScore, id, 0)
 
   # For each node, the total cost of getting from the start node to the goal
   # by passing by that node. That value is partly known, partly heuristic.
   fScore = SortedSet{Tuple{Float32,Int32}}() # map with default value of Infinity
 
   # For the first node, that value is completely heuristic.
-  setValue!(fScore, start.id, distance(start, goal)) # heuristic_cost_estimate = distance
+  setValue!(fScore, id, distance(start, goal)) # heuristic_cost_estimate = distance
+
+  found = false
+  stuck = false
+  list = [start.id,goal.id]
 
   for i=1:length(world) #while length(openSet)>0 # avoid endless loop
     #sort!(s,alg=InsertionSort,lt=(x,y)->x[2]<y[2])
-    current = getNode(first(fScore)[2]) #the node in openSet having the lowest fScore[] value
-    if current == goal
-      return reconstruct_path!(cameFrom, current)
+
+    current = getNodeByLowestScore(openSet,fScore) #the node in openSet having the lowest fScore[] value
+
+    if current == nothing
+      @warn "Cannot find a way to goal!"
+      stuck = true
+      break
     end
 
-    openSet = filter!(e->e ≠ current,openSet) # delete
-    #delete!(openSet,current)
-    push!(closedSet, current)
+    if current == goal
+      list = reconstruct_path!(cameFrom, current)
+      found = true
+      break
+    end
 
-    for neighbor in current.neighbors
-      if in(neighbor,closedSet) || neighbor.blocked || neighbor.owner != playerNumber continue end # Ignore the neighbor which is already evaluated or blocked.
+    cid=current.id
 
-      # The distance from start to a neighbor
-      tentative_gScore = getValue(gScore,current.id) + distance(current, neighbor) # dist_between = distance
-      nscore = getValue(gScore,neighbor.id)
+    openSet = filter!(e->e ≠ cid, openSet) # delete
+    #delete!(openSet, current.id)
+    push!(closedSet, cid)
 
-      if !in(neighbor,openSet) #neighbor not in openSet	# Discover a new node
-        push!(openSet, neighbor)
-      elseif nscore != nothing && tentative_gScore >= nscore
-        continue
+    for neighbor in current.neighbors # || neighbor.owner != playerNumber
+      nid=neighbor.id
+      if in(nid, closedSet) || neighbor.blocked continue end # Ignore the neighbor which is already evaluated or blocked.
+
+      tscore = getValue(gScore,cid)
+      if tscore == nothing
+        tscore=0
+        @warn "Error: Could not find Neighbor???"
+        break
       end
 
+      # The distance from start to a neighbor
+      tentative_gScore = tscore + distance(current, neighbor) # dist_between = distance
+      nscore = getValue(gScore,nid)
+
+      if nscore != nothing && tentative_gScore >= nscore continue end
+      if nscore == nothing nscore=0 end
+
+      if !in(nid, openSet) push!(openSet, nid) end #neighbor not in openSet	# Discover a new node
+
+    #  if !in(nid, openSet) #neighbor not in openSet	# Discover a new node
+    #    push!(openSet, nid)
+    #  elseif nscore != nothing && tentative_gScore >= nscore
+    #    continue
+    #  end
+
       # This path is the best until now. Record it!
-      cameFrom[neighbor.id] = current
-      setValue!(gScore, neighbor.id, tentative_gScore)
-      setValue!(fScore, neighbor.id, tentative_gScore + distance(neighbor, goal)) # heuristic_cost_estimate = distance
+      cameFrom[nid] = cid
+      setValue!(gScore, nid, tentative_gScore)
+      setValue!(fScore, nid, tentative_gScore*0 + distance(neighbor, goal)) # heuristic_cost_estimate = distance
     end
   end
-  list = reconstruct_path!(cameFrom, goal)
+
+  if !found && !stuck
+    list = reconstruct_path!(cameFrom, goal)
+    @warn "A*-Search Incomplete: $(length(list)) -> $(in(goal,list))"
+  end
+
+  #list = reconstruct_path!(cameFrom, goal)
   #@warn "a*-search result $(length(list)) -> $(in(goal,list))"
   list
 end
@@ -373,18 +497,25 @@ end
 ####################################################################################################
 
 function rechargeWhenLow(aibot)
-  #if (ENERGYTIME-time()) >= 9 return false end
+  if (ENERGYTIME-time()) >= 9 return false end
+
+  if aibot.targetEnergyField != nothing && distance(aibot.node, aibot.targetEnergyField) < 0.3
+    aibot.targetEnergyField=nothing
+    global ENERGYTIME = time()+10 # get next 10 sec
+    return false
+  end
+
   if aibot.targetEnergyField != nothing return true end
 
   best = (999,nothing)
   for node in listOfEnergyFields
     #node = getNode(index)
-    dist = distance(aibot.node, node) #
+    dist = distance(aibot.node, node)
     if best[1] > dist best=(dist,node) end
   end
-  println(best[2].position)
+  #println(best[2].position)
   aibot.targetEnergyField = best[2] #rand(listOfEnergyFields)
-  aibot.target = aibot.targetEnergyField
+  #aibot.target = aibot.targetEnergyField
   true
 end
 
@@ -392,11 +523,14 @@ end
 #bot 2 when low: search energy felds suchen, else: draw non owned fields
 #bot 3 draw all non owned fields
 
-function searchForNotOwnedFields(aibot::AIBot)
+function searchForNotOwnedFields(aibot::AIBot, enemyOnly=false)
   current = aibot.node
+  #println("$(aibot.parent.id): p:$playerNumber")
   for i=1:length(world) # do not go to infinity
     for node in current.neighbors
       if node.blocked || node.owner == playerNumber continue end
+      if enemyOnly && node.owner == 0 continue end
+      #println("$(aibot.parent.id): owner:$(node.owner)")
       return node
     end
     current=current.parent
@@ -405,105 +539,58 @@ function searchForNotOwnedFields(aibot::AIBot)
 end
 
 function searchNext(aibot::AIBot)
-  # when target reached -> get new target
-  if aibot.target != nothing && aibot.target.owner == playerNumber aibot.target = nothing end
+  # run towards nearest energy target when low
+  if aibot.parent.id == 2 && rechargeWhenLow(aibot) return end
 
   waypoints = listOfWaypoints[aibot.parent.id]
+
   if length(waypoints)>0
-    aibot.target = popfirst!(waypoints)
-    return
+    global lastNodes, lastNodesMax
+    counter = lastNodes[aibot.parent.id][1]
+    list = lastNodes[aibot.parent.id][2]
+    foundnode = searchCurrentNode(aibot, getBotPosition(client,playerNumber,aibot.parent.id))
+    if foundnode == aibot.node
+      counter+=1
+      if counter >= lastNodesMax
+        counter=0
+        listOfWaypoints[aibot.parent.id]=[]
+        #println("$(aibot.parent.id): got stuck!")
+      end
+    else counter=0
+    end
+    lastNodes[aibot.parent.id][1] = counter
   end
 
-  if aibot.parent.id != 0
-    if rechargeWhenLow(aibot)
-      if aibot.parent.id != 2
-        next = aStarSearch(aibot.node,aibot.targetEnergyField)
-        if next != nothing
-          for n in next println("$(aibot.parent.id): $(n.position) => $(aibot.targetEnergyField.position)") end
-          waypoints = listOfWaypoints[aibot.parent.id]=next
-          aibot.target = popfirst!(waypoints)
-        end #aibot.target
-      end
-      return # ignore all nodes an go straight to energy field
-    else
-      #target = searchForNotOwnedFields(aibot)
-      #if target == nothing aibot.targetEnergyField end
-      if aibot.target != aibot.targetEnergyField && aibot.targetEnergyField != nothing
-        global ENERGYTIME = time()+10 # get next 10 sec
-        aibot.targetEnergyField = nothing
-      end
-    end
-    return
+  if length(waypoints)==0
+    colorTarget = searchForNotOwnedFields(aibot, aibot.parent.id == 1)
+    if colorTarget==nothing colorTarget = first(listOfEnergyFields) end # default target
+    waypoints = listOfWaypoints[aibot.parent.id] = aStarSearch(aibot.node,colorTarget)
+    #println("$(aibot.parent.id): $(length(waypoints)) waitpoints!")
+  end
+
+  foundnode = searchCurrentNode(aibot, getBotPosition(client,playerNumber,aibot.parent.id))
+
+  best = (999,0,nothing)
+  for (index,waypoint) in enumerate(waypoints)
+    index+=1
+    dist = distance(foundnode, waypoint)
+    if best[1]>dist best=(dist,index,waypoint) end
+    if waypoint == foundnode best=(dist,index,waypoint); break end
+  end
+
+  if best[3] != nothing
+    waypoints=listOfWaypoints[aibot.parent.id]=waypoints[best[2]:end]
+    #println("$(aibot.parent.id): $(length(waypoints)) W")
+  end
+
+  if length(waypoints)==0
+    waypoint = aibot.targetEnergyField
   else
-    return
+    waypoint = first(waypoints)
   end
 
-  #next = aStarSearch(aibot.node,aibot.targetEnergyField)
-  #if next != nothing next=next[2] end
-
-  next = nothing
-  current = aibot.node
-  passed = []
-
-  # bot 1
-  #while next == nothing
-  for i=1:length(world) # do not go to infinity
-    previous = current
-    for node in current.neighbors
-      if in(node,passed) || (aibot.parent.id != 1 && node.blocked) continue end
-      current=node
-      break
-    end
-    if current == previous
-      push!(passed,current)
-      current=current.parent
-      if current == nothing break end # end of tree?
-    end
-    if current.owner != aibot.parent.id && (aibot.parent.id == 3 || (aibot.parent.id == 1 && current.owner>0))
-      next=current
-      break
-    end # break
-  end
-  #if next == nothing @warn "$(aibot.parent.id): No target found!" end
-  aibot.target = next
+  aibot.target = waypoint
 end
-
-#=
-function searchNext_old(aibot::AIBot)
-  if aibot.node == nothing return end
-  #if aibot.parent.id != 1 aibot.target=aibot.node; return end
-  #return
-  #if !charge
-    if aibot.target != nothing && aibot.target.owner == playerNumber aibot.target = nothing end
-    #distance(aibot.parent.position,aibot.target) < 0.051 #
-    if aibot.target == nothing
-      (best,bestdist)=(nothing,999)
-      for node in aibot.node.neighbors
-        if aibot.parent.id != 2 && node.blocked continue end # skip blocked
-        if node.owner == aibot.parent.id continue end # skip owned
-        if in(node,aibot.avoid) || in(node,aibot.history) continue end
-        if aibot.parent.id != 1 best=node
-        else
-          x = distance(node,aibot.targetEnergyField)
-          if x < bestdist; (best,bestdist)=(node,x); end
-        end
-      end
-      if best != nothing
-        push!(aibot.history,aibot.node)
-        aibot.target = best
-      else
-        if !in(aibot.node,aibot.avoid) push!(aibot.avoid,aibot.node) end
-        if length(aibot.history)>1
-          pop!(aibot.history)
-          aibot.target = aibot.history[end]
-        else
-          @warn "$(aibot.parent.id) is stuck on $(aibot.node.position)!"
-        end
-      end
-    end
-  #end
-end
-=#
 
 function updateWorld(client::NetworkClient)
   global world, bsave
@@ -548,9 +635,9 @@ function main(args::Array{String,1}; printer::Union{Nothing,Function}=nothing)
   global playerNumber, latency
 
   len = length(args)
-  global server = len>1 ? args[1] : "localhost"
+  global server = len>1 ? args[1] : "localhost" # 141.45.214.125
   global name = len>2 ? args[2] : "MyTeam"
-  global winMsg = len>3 ? args[3] : "GEWONNEN!"
+  global winMsg = len>3 ? args[3] : "MyText"
   global client = nothing
 
   # Time limits
@@ -561,6 +648,7 @@ function main(args::Array{String,1}; printer::Union{Nothing,Function}=nothing)
 
   timeLimitBroke = false
   prev_position = nothing
+  DUMMY_CLIENTS = true
   startTime = 0
   tickTime = 0
 
@@ -574,6 +662,19 @@ function main(args::Array{String,1}; printer::Union{Nothing,Function}=nothing)
     cywwtaip.reset()
 
     @info "Connect to server '$server' (Timeout in $serverTimeout seconds)..."
+    if DUMMY_CLIENTS
+      try
+        println("1. Dummy")
+        client = NetworkClient(server, "Dummy1", "", 1)
+      catch ex
+      end
+      try
+        println("2. Dummy")
+        client = NetworkClient(server, "Dummy2", "", 1)
+      catch ex
+      end
+      println("Final Client")
+    end
     client = NetworkClient(server, name, winMsg, serverTimeout)
 
     playerNumber = getMyPlayerNumber(client)

@@ -104,14 +104,14 @@ function parse(this::GraphNode, handle::JGraphNode)
   this.handle = handle
   this.position = getPosition(handle) #[jfield(handle, "x", jfloat), jfield(handle, "y", jfloat), jfield(handle, "z", jfloat)]
   this.blocked = Bool(jfield(handle, "blocked", jboolean))
-  this.owner = jfield(handle, "owner", jint)+1
+  this.owner = jfield(handle, "owner", jint)
   this.neighbors = jfield(handle, "neighbors", Array{JGraphNode, 1})
   this
 end
 
 function parse(handles::Array{JGraphNode, 1}; f::Function=DEFAULT_NODE_FUNCTION)
   nodes = TEMPLATE_LIST #deepcopy(TEMPLATE_LIST)
-  @time @sync @distributed for i=1:length(handles) f(parse(nodes[i], handles[i])) end
+  @time @sync @distributed for i=1:length(handles) f(parse(nodes[i], handles[i])) end #node in nodes, handle in handles
   nodes
 end
 
@@ -158,7 +158,7 @@ function update(this::GraphNode, handle::JGraphNode)
   #this.handle = handle # not used, can be ignored
   #this.position # should not change (is static anyway)
   this.blocked = Bool(jfield(handle, "blocked", jboolean)) # can change
-  this.owner = jfield(handle, "owner", jint)+1 # can change
+  this.owner = jfield(handle, "owner", jint) # can change
   #this.neighbors # should not change, we replaced it previously in createWorld()
   this
 end

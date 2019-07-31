@@ -1,4 +1,6 @@
 [statusPic]: status.png "cywwtaip"
+[plot1Pic]: plot1.svg "plot1"
+[plot2Pic]: plot2.svg "plot2"
 
 ![statusPic][statusPic]
 
@@ -22,9 +24,6 @@ Study Project 2 (Real Time Strategy Game): AI Game Client written in Julia
 * Predictive movement (does not have to be A*, but also no ad hoc procedure just about neighborhood)
 * Different use of the three bots (not all control the same, ideally - but not mandatory - cooperative, taking advantage of the individual peculiarities)
 * Consider your own energy in the strategy
-
-## Documentation
-not yet
 
 ## Problems
 Currently this Project only works with Julia 1.0 because package [JavaCall](https://github.com/JuliaInterop/JavaCall.jl) is not updated for Julia 1.1 yet.
@@ -53,3 +52,10 @@ I do not own this library, so please get permission and file from **Prof. Dr. Le
 
 ### Linux
 * not tested
+
+## A*Search 
+### Old variant
+![plot1Pic][plot1Pic]
+
+## New varaint
+![plot2Pic][plot2Pic]
