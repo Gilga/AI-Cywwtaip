@@ -1,6 +1,4 @@
 [statusPic]: status.png "cywwtaip"
-[plot1Pic]: plot1.svg "plot1"
-[plot2Pic]: plot2.svg "plot2"
 
 ![statusPic][statusPic]
 
@@ -53,9 +51,9 @@ I do not own this library, so please get permission and file from **Prof. Dr. Le
 ### Linux
 * not tested
 
-## A*Search 
+## A*-Search
 ### Old variant
-![plot1Pic][plot1Pic]
+[See animated SVG here](https://gilga.github.io/AI-Cywwtaip/plot1.svg)
 
 ## New varaint
-![plot2Pic][plot2Pic]
+[See animated SVG here](https://gilga.github.io/AI-Cywwtaip/plot2.svg)
