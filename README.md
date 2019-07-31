@@ -53,7 +53,7 @@ I do not own this library, so please get permission and file from **Prof. Dr. Le
 
 ## A*-Search
 ### Old variant
-[See animated SVG here](https://gilga.github.io/AI-Cywwtaip/plot1.svg)
+[See animated SVG here](http://mariolink.de/github/AI-Cywwtaip/plot1.svg)
 
 ## New varaint
-[See animated SVG here](https://gilga.github.io/AI-Cywwtaip/plot2.svg)
+[See animated SVG here](http://mariolink.de/github/AI-Cywwtaip/plot2.svg)
